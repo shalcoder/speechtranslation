@@ -1,11 +1,12 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase, VideoProcessorBase
 import av
 import threading
 import queue
 import time
 import base64
 import os
+import numpy as np
 import azure.cognitiveservices.speech as speechsdk
 from scripts.backend.ultraaudio.config import get_azure_configs, TTS_VOICE_MAP_FEMALE, TTS_VOICE_MAP_MALE
 from scripts.backend.db import DatabaseManager
@@ -15,8 +16,21 @@ class AzureAudioProcessor(AudioProcessorBase):
     def __init__(self):
         self.audio_queue = queue.Queue()
         self.lock = threading.Lock()
+        self.is_muted = False
+
+    def set_mute(self, muted):
+        with self.lock:
+            self.is_muted = muted
 
     def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        # If muted, we still return the frame to keep the stream alive, but we don't process it
+        # Actually, to "mute" effectively for the other side (if peer-to-peer), we should zero it out.
+        # But here we are just sending to Azure.
+        
+        with self.lock:
+            if self.is_muted:
+                return frame # Don't send to Azure queue
+        
         # Convert to 16kHz mono for Azure
         resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
         resampled_frames = resampler.resample(frame)
@@ -25,6 +39,25 @@ class AzureAudioProcessor(AudioProcessorBase):
             audio_bytes = r_frame.to_ndarray().tobytes()
             self.audio_queue.put(audio_bytes)
             
+        return frame
+
+# --- Video Processor ---
+class VideoProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.video_off = False
+        self.lock = threading.Lock()
+
+    def set_video_off(self, off):
+        with self.lock:
+            self.video_off = off
+
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        with self.lock:
+            if self.video_off:
+                # Return black frame
+                img = frame.to_ndarray(format="bgr24")
+                black_img = np.zeros(img.shape, dtype=np.uint8)
+                return av.VideoFrame.from_ndarray(black_img, format="bgr24")
         return frame
 
 # --- Helper: Synthesize Speech ---
@@ -85,7 +118,7 @@ def start_azure_recognition(processor, source_lang, target_lang, result_queue, s
                 # 2. Save to DB with audio
                 db.add_message(room_id, username, original, translated, target_lang, audio_b64)
                 
-                # 3. Put in queue for local UI update (optional, as we poll DB)
+                # 3. Put in queue for local UI update
                 result_queue.put({
                     "user": username,
                     "original": original,
@@ -103,6 +136,10 @@ def start_azure_recognition(processor, source_lang, target_lang, result_queue, s
                 push_stream.write(chunk)
             except queue.Empty:
                 continue
+            
+            # Heartbeat update
+            db.update_heartbeat(room_id, username)
+            
     finally:
         recognizer.stop_continuous_recognition()
         push_stream.close()
@@ -115,35 +152,93 @@ def render_remote_meeting(
     target_lang_code
 ):
     st.markdown("## 🌍 Remote Meeting with Live Dubbing")
-    st.caption(f"Join a room. Speak in **{source_lang_name}**, and others will hear **{target_lang_name}**.")
+    
+    # Initialize Session State
+    if 'meeting_joined' not in st.session_state:
+        st.session_state.meeting_joined = False
+    if 'room_id' not in st.session_state:
+        st.session_state.room_id = ""
+    if 'username' not in st.session_state:
+        st.session_state.username = ""
 
+    # --- LOBBY VIEW ---
+    if not st.session_state.meeting_joined:
+        st.caption("Join a room to start communicating. Your speech will be translated and broadcasted.")
+        
+        with st.container(border=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                u_name = st.text_input("Your Name", placeholder="Enter your name", key="lobby_name")
+            with c2:
+                r_id = st.text_input("Room ID", placeholder="e.g. Room101", key="lobby_room")
+            
+            if st.button("Join / Create Room", type="primary", use_container_width=True):
+                if u_name and r_id:
+                    st.session_state.username = u_name
+                    st.session_state.room_id = r_id
+                    st.session_state.meeting_joined = True
+                    st.rerun()
+                else:
+                    st.warning("Please enter both Name and Room ID.")
+        return
+
+    # --- MEETING VIEW ---
+    
     # Sidebar Controls
     with st.sidebar:
-        st.markdown("### ⚙️ Meeting Settings")
-        username = st.text_input("Your Name", value="User1")
-        room_id = st.text_input("Room ID", value="General")
+        st.markdown(f"### 🏠 Room: {st.session_state.room_id}")
+        st.markdown(f"👤 **{st.session_state.username}**")
+        
+        if st.button("Leave Room", type="secondary"):
+            st.session_state.meeting_joined = False
+            st.rerun()
+            
+        st.divider()
+        st.markdown("### 👥 Participants")
+        db = DatabaseManager()
+        participants = db.get_participants(st.session_state.room_id)
+        if participants:
+            for p in participants:
+                st.markdown(f"- {p} {'(You)' if p == st.session_state.username else ''}")
+        else:
+            st.markdown("- *Waiting...*")
+            
+        st.divider()
         
         # Voice Selection for Dubbing
         st.markdown("### 🗣️ Dubbing Voice")
         gender = st.radio("Voice Gender", ["Female", "Male"], horizontal=True)
         voice_map = TTS_VOICE_MAP_MALE if gender == "Male" else TTS_VOICE_MAP_FEMALE
-        target_voice = voice_map.get(target_lang_code, "en-US-JennyNeural") # Default fallback
-        st.info(f"Selected Voice: {target_voice}")
+        target_voice = voice_map.get(target_lang_code, "en-US-JennyNeural") 
+        st.info(f"Target Voice: {target_voice}")
 
+    # Main Interface
     col_video, col_chat = st.columns([1.5, 1])
 
     with col_video:
-        st.markdown("#### 📹 Video Stream")
+        st.markdown("#### 📹 Live Stream")
+        
+        # Controls
+        c_mute, c_video = st.columns(2)
+        is_muted = c_mute.checkbox("🔇 Mute Mic", value=False)
+        is_video_off = c_video.checkbox("📷 Turn Off Camera", value=False)
         
         # WebRTC Context
         ctx = webrtc_streamer(
             key="remote-meeting-shared",
             mode=WebRtcMode.SENDRECV,
             audio_processor_factory=AzureAudioProcessor,
+            video_processor_factory=VideoProcessor,
             media_stream_constraints={"video": True, "audio": True},
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
             video_html_attrs={"style": {"width": "100%", "border-radius": "12px", "overflow": "hidden"}},
         )
+        
+        # Apply Controls to Processors
+        if ctx.audio_processor:
+            ctx.audio_processor.set_mute(is_muted)
+        if ctx.video_processor:
+            ctx.video_processor.set_video_off(is_video_off)
 
     # Initialize State
     if 'meeting_queue' not in st.session_state:
@@ -165,15 +260,15 @@ def render_remote_meeting(
                     target_lang_code, 
                     st.session_state.meeting_queue, 
                     st.session_state.stop_event,
-                    room_id,
-                    username,
+                    st.session_state.room_id,
+                    st.session_state.username,
                     target_voice
                 ),
                 daemon=True
             )
             t.start()
             st.session_state.azure_thread = t
-            st.toast("Connected to Translation Server", icon="🟢")
+            st.toast("Connected to Meeting", icon="🟢")
 
     elif not ctx.state.playing and st.session_state.azure_thread:
         st.session_state.stop_event.set()
@@ -188,12 +283,7 @@ def render_remote_meeting(
         chat_container = st.container(height=500, border=True)
         
         # Poll Database
-        db = DatabaseManager()
-        messages = db.get_messages(room_id, limit=20) # Returns tuples
-        
-        # Reverse to show oldest at top (chat style) -> actually newest at top is better for live updates?
-        # Let's keep newest at top for now or standard chat bottom-up. 
-        # get_messages returns DESC (newest first).
+        messages = db.get_messages(st.session_state.room_id, limit=20) 
         
         with chat_container:
             if not messages:
@@ -203,7 +293,7 @@ def render_remote_meeting(
                 # msg: (user, original, translated, timestamp, lang_code, audio_base64)
                 m_user, m_orig, m_trans, m_time, m_lang, m_audio = msg
                 
-                is_me = (m_user == username)
+                is_me = (m_user == st.session_state.username)
                 align = "flex-end" if is_me else "flex-start"
                 bg_color = "rgba(91, 86, 233, 0.2)" if is_me else "rgba(255, 255, 255, 0.05)"
                 border_color = "#5B56E9" if is_me else "#444"
@@ -229,15 +319,6 @@ def render_remote_meeting(
                     
                     # Audio Player for Dubbing
                     if m_audio:
-                        # Unique key for audio player to avoid conflicts
-                        # We use a hash of the message content + timestamp as key
-                        audio_key = f"{m_user}_{m_time}_{len(m_trans)}"
-                        
-                        # Auto-play logic: If it's NOT me, I want to hear it.
-                        # But standard HTML5 autoplay policies might block it.
-                        # We can try autoplay="autoplay"
-                        
-                        # Only show player if it's not me (or maybe I want to hear myself too? usually not)
                         if not is_me:
                             st.markdown(f"""
                                 <audio controls autoplay style="width: 100%; height: 30px; margin-top: 5px;">
@@ -245,7 +326,6 @@ def render_remote_meeting(
                                 </audio>
                             """, unsafe_allow_html=True)
                         else:
-                             # For me, just show a small play button if I want to verify
                              st.markdown(f"""
                                 <audio controls style="width: 100%; height: 30px; margin-top: 5px;">
                                     <source src="data:audio/wav;base64,{m_audio}" type="audio/wav">
@@ -255,6 +335,6 @@ def render_remote_meeting(
 
     # Auto-refresh for real-time feel
     if ctx.state.playing:
-        time.sleep(1.5) # Poll every 1.5 seconds
+        time.sleep(1.5) 
         st.rerun()
 

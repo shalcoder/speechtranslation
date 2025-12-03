@@ -97,6 +97,35 @@ class DatabaseManager:
                 type TEXT
             )
         ''')
+        
+        # Heartbeats for active participants
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS heartbeats (
+                room_id TEXT,
+                user TEXT,
+                last_seen REAL,
+                PRIMARY KEY (room_id, user)
+            )
+        ''')
+            
+        self.conn.commit()
+
+    def update_heartbeat(self, room_id, user):
+        with self._lock:
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO heartbeats (room_id, user, last_seen)
+                VALUES (?, ?, ?)
+            ''', (room_id, user, time.time()))
+            self.conn.commit()
+
+    def get_participants(self, room_id, active_threshold=30):
+        cutoff = time.time() - active_threshold
+        with self._lock:
+            self.cursor.execute('''
+                SELECT user FROM heartbeats 
+                WHERE room_id = ? AND last_seen > ?
+            ''', (room_id, cutoff))
+            return [row[0] for row in self.cursor.fetchall()]
             
         self.conn.commit()
 
