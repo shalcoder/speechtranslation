@@ -53,6 +53,15 @@ class LiveTranslationOrchestrator:
         self.audio_buffer = {}
         self.playback_lock = threading.Lock()
         self.last_voice_activity = 0
+        
+        # WebRTC Support
+        self.push_stream = None
+
+    def ingest_audio(self, audio_bytes):
+        """Write audio bytes to the push stream (for WebRTC)"""
+        if self.push_stream:
+            self.push_stream.write(audio_bytes)
+
 
     def is_voice_active(self, threshold=1.5):
         return (time.time() - self.last_voice_activity) < threshold
@@ -227,7 +236,12 @@ class LiveTranslationOrchestrator:
                     args=(file_path, stream),
                     daemon=True
                 ).start()
+            elif input_type == "WebRTC":
+                # Create a push stream that external callers (WebRTC processor) can write to
+                self.push_stream = speechsdk.audio.PushAudioInputStream()
+                audio_config = speechsdk.audio.AudioConfig(stream=self.push_stream)
             else:
+                # Default Microphone (Local only)
                 audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
 
             self.recognizer = speechsdk.translation.TranslationRecognizer(

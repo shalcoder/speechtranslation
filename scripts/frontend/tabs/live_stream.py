@@ -3,8 +3,34 @@ import time
 import base64
 import queue
 import streamlit as st
+import av
+import threading
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 from scripts.backend.ultraaudio.orchestrator import LiveTranslationOrchestrator
 from scripts.backend.ultraaudio.config import LANG_CODE_NAME_MAP
+
+class LiveAudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.orchestrator = None
+        self.resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
+        self.lock = threading.Lock()
+
+    def set_orchestrator(self, orchestrator):
+        with self.lock:
+            self.orchestrator = orchestrator
+
+    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        with self.lock:
+            if self.orchestrator and self.orchestrator.is_running:
+                try:
+                    # Resample to 16kHz mono for Azure
+                    resampled_frames = self.resampler.resample(frame)
+                    for r_frame in resampled_frames:
+                        audio_bytes = r_frame.to_ndarray().tobytes()
+                        self.orchestrator.ingest_audio(audio_bytes)
+                except Exception as e:
+                    print(f"WebRTC Audio Error: {e}")
+        return frame
 
 def render_live_stream(
     source_lang_name,
@@ -29,8 +55,7 @@ def render_live_stream(
     with col_ctrl:
         st.markdown("#### Input & Reference")
         live_mode = st.radio("Input Source", ["Microphone", "File Simulation"], horizontal=True, key="live_mode")
-        # ref_text removed as per user request for automated metrics
-
+        
         sim_file = None
         if live_mode == "File Simulation":
             sim_upl = st.file_uploader("Upload source WAV file (Simulation)", type=['wav'], key="sim_file_upload")
@@ -40,9 +65,22 @@ def render_live_stream(
                     f.write(sim_upl.getbuffer())
 
         c_start, c_stop = st.columns(2)
-        start_btn = c_start.button("Start Live Bridge ⚡", type="primary", use_container_width=True)
-        stop_btn = c_stop.button("Stop Session 🛑", use_container_width=True, help="Stop the live translation pipeline.")
         
+        # Logic for Start/Stop
+        if live_mode == "File Simulation":
+            start_btn = c_start.button("Start Simulation ⚡", type="primary", use_container_width=True)
+            stop_btn = c_stop.button("Stop Session 🛑", use_container_width=True)
+        else:
+            # For Microphone, we use WebRTC streamer which acts as the "Start" mechanism
+            # But we still need to initialize the orchestrator
+            if 'orchestrator' not in st.session_state or not st.session_state.orchestrator.is_running:
+                start_btn = c_start.button("Initialize Engine ⚡", type="primary", use_container_width=True)
+            else:
+                start_btn = False
+                c_start.success("Engine Ready")
+            
+            stop_btn = c_stop.button("Stop Engine 🛑", use_container_width=True)
+
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("#### Session Profile")
         st.caption(f"**Use case:** *{use_case_profile}*")
@@ -71,6 +109,7 @@ def render_live_stream(
     if 'live_logs' not in st.session_state:
         st.session_state.live_logs = []
 
+    # --- Start Logic ---
     if start_btn:
         if live_mode == "File Simulation" and not sim_file:
             st.error("Please upload a simulation file first.")
@@ -78,12 +117,16 @@ def render_live_stream(
             # Stop existing if running
             if 'orchestrator' in st.session_state and st.session_state.orchestrator.is_running:
                 st.session_state.orchestrator.stop_pipeline()
-                time.sleep(0.5) # Give it time to stop
+                time.sleep(0.5)
 
             # Clear logs on new start
             st.session_state.live_logs = []
             
             voice_map = tts_voice_map.copy()
+            
+            # Determine input type for Orchestrator
+            orch_input_type = "WebRTC" if live_mode == "Microphone" else "File Simulation"
+            
             st.session_state.orchestrator = LiveTranslationOrchestrator(
                 source_lang=source_lang_code,
                 primary_target_lang=target_lang_code,
@@ -93,15 +136,34 @@ def render_live_stream(
                 voice_pitch=base_voice_pitch,
                 voice_style=voice_style
             )
-            st.session_state.orchestrator.start_pipeline(live_mode, sim_file)
-            st.toast("Live pipeline started.", icon="⚡")
+            st.session_state.orchestrator.start_pipeline(orch_input_type, sim_file)
+            st.toast("Engine initialized.", icon="⚡")
             st.rerun()
 
+    # --- Stop Logic ---
     if stop_btn and 'orchestrator' in st.session_state:
         st.session_state.orchestrator.stop_pipeline()
-        st.toast("Live pipeline stopped.", icon="🛑")
-        # Do NOT clear logs here so user can download them
-        
+        st.toast("Engine stopped.", icon="🛑")
+
+    # --- WebRTC Streamer (Only for Microphone Mode) ---
+    if live_mode == "Microphone":
+        with col_ctrl:
+            st.markdown("#### 🎤 Microphone Input")
+            if 'orchestrator' in st.session_state and st.session_state.orchestrator.is_running:
+                ctx = webrtc_streamer(
+                    key="live-stream-mic",
+                    mode=WebRtcMode.SENDONLY,
+                    audio_processor_factory=LiveAudioProcessor,
+                    media_stream_constraints={"video": False, "audio": True},
+                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+                )
+                
+                # Connect Processor to Orchestrator
+                if ctx.audio_processor:
+                    ctx.audio_processor.set_orchestrator(st.session_state.orchestrator)
+            else:
+                st.info("Click 'Initialize Engine' to enable microphone.")
+
     # Download Transcript Button
     if 'live_logs' in st.session_state and st.session_state.live_logs:
         import pandas as pd
@@ -126,7 +188,7 @@ def render_live_stream(
                 try:
                     while not orch.result_queue.empty():
                         item = orch.result_queue.get_nowait()
-                        st.session_state.live_logs.append(item) # Append to session state
+                        st.session_state.live_logs.append(item) 
                 except queue.Empty:
                     pass
 
@@ -136,16 +198,15 @@ def render_live_stream(
                 
                 bars_html = ""
                 if is_active:
-                    label_html = '<div class="live-visualizer-label" style="margin-right: 15px; color: #6BE890;">🔴 Listening (Mic/File)</div>'
+                    label_html = '<div class="live-visualizer-label" style="margin-right: 15px; color: #6BE890;">🔴 Listening...</div>'
                     for _ in range(12): 
-                        # Generate new random values for each frame to ensure animation
                         h = random.randint(20, 100)
                         dur = random.uniform(0.3, 0.8)
                         bars_html += f'<div class="live-wave-bar" style="height: {h}%; animation-duration: {dur}s; background: linear-gradient(180deg, #6BE890, #3A379C);"></div>'
                 else:
-                    label_html = '<div class="live-visualizer-label" style="margin-right: 15px; color: #A0A4B3;">⚪ Idle (Waiting for Voice)</div>'
+                    label_html = '<div class="live-visualizer-label" style="margin-right: 15px; color: #A0A4B3;">⚪ Idle</div>'
                     for _ in range(12):
-                        h = 5 # Low static height
+                        h = 5 
                         bars_html += f'<div class="live-wave-bar" style="height: {h}%; background: #3A3F50;"></div>'
 
                 visualizer_html = f"""
@@ -159,7 +220,7 @@ def render_live_stream(
                 visualizer_placeholder.markdown(visualizer_html, unsafe_allow_html=True)
 
                 if st.session_state.live_logs:
-                    recent_logs = st.session_state.live_logs[-8:] # Use session state for history
+                    recent_logs = st.session_state.live_logs[-8:]
                     chat_html = '<div class="chat-container">'
                     for log in recent_logs:
                         lang_code = log.get("lang", target_lang_code)
@@ -189,13 +250,13 @@ def render_live_stream(
                     for log in heat_logs:
                         latency = log.get("latency", 0.0) or 0.0
                         if latency < 250:
-                            color = "#6BE890" # Green: Excellent
+                            color = "#6BE890" 
                         elif latency < 700:
-                            color = "#FFC84A" # Yellow: Good
+                            color = "#FFC84A" 
                         else:
-                            color = "#FF7070" # Red: High Latency
+                            color = "#FF7070" 
                         
-                        conf_height = max(5, int(log.get("confidence", 0.0) * 0.2)) # Min 5px, Max 20px
+                        conf_height = max(5, int(log.get("confidence", 0.0) * 0.2)) 
                         
                         heat_html += f'<div title="{LANG_CODE_NAME_MAP.get(log.get("lang", "-"))}: {latency:.0f} ms | Conf: {log.get("confidence", 0.0):.0f}%" style="width:10px;height:{conf_height}px;border-radius:2px;background:{color}; transition: height 0.3s ease;"></div>'
                     heat_html += '</div>'
@@ -223,7 +284,6 @@ def render_live_stream(
                 time.sleep(0.03)
         
         # --- Post-Loop / Stopped State Rendering ---
-        # Drain remaining logs/errors
         try:
             while not orch.result_queue.empty():
                 item = orch.result_queue.get_nowait()
@@ -231,14 +291,12 @@ def render_live_stream(
         except:
             pass
         
-        # Force final render of logs to show any errors (even if loop didn't run)
         if st.session_state.live_logs:
             recent_logs = st.session_state.live_logs[-8:]
             chat_html = '<div class="chat-container">'
             for log in recent_logs:
-                # Check for error
                 if log.get("lang") == "Error":
-                    st.error(f"❌ {log['original']}") # Prominent error display
+                    st.error(f"❌ {log['original']}") 
                     chat_html += f"""
                     <div class="chat-bubble" style="border-left: 4px solid #FF4B4B; background: rgba(255, 75, 75, 0.1);">
                         <div class="chat-meta" style="color: #FF4B4B;">❌ SYSTEM ERROR - {log['timestamp']}</div>

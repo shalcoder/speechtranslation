@@ -75,13 +75,15 @@ def render_batch_studio(
 
                                     ydl_opts = {
                                         'outtmpl': os.path.join(temp_dir, f'downloaded_video_{unique_id}.%(ext)s'),
-                                        'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+                                        # Use best format that contains both video and audio if possible, else best video + best audio
+                                        'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                                         'merge_output_format': 'mp4',
                                         'noplaylist': True,
                                         'quiet': True,
                                         'nocheckcertificate': True,
                                         'ignoreerrors': True,
                                         'no_warnings': True,
+                                        'force_ipv4': True, # Force IPv4 to avoid some blocks
                                         'http_headers': {
                                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                                         }
@@ -176,13 +178,14 @@ def render_batch_studio(
 
                                                         ydl_opts = {
                                                             'outtmpl': os.path.join(temp_dir, f'downloaded_video_{unique_id}.%(ext)s'),
-                                                            'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+                                                            'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
                                                             'merge_output_format': 'mp4',
                                                             'noplaylist': True,
                                                             'quiet': True,
                                                             'nocheckcertificate': True,
                                                             'ignoreerrors': True,
                                                             'no_warnings': True,
+                                                            'force_ipv4': True,
                                                         }
                                                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                                             ydl.download([vid_url])
