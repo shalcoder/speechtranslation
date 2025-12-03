@@ -51,16 +51,5 @@ AZURE_KEY = os.getenv("AZURE_SPEECH_KEY")
 AZURE_LOCATION = "centralindia"
 
 @st.cache_resource
-def get_azure_configs(source_lang_code, target_voice_name):
-    translation_config = speechsdk.translation.SpeechTranslationConfig(
-        subscription=AZURE_KEY,
-        region=AZURE_LOCATION
-    )
-    translation_config.speech_recognition_language = source_lang_code
-
-    synthesis_config = speechsdk.SpeechConfig(
-        subscription=AZURE_KEY,
-        region=AZURE_LOCATION
-    )
-    synthesis_config.speech_synthesis_voice_name = target_voice_name
-    return translation_config, synthesis_config
+def get_azure_configs():
+    return AZURE_KEY, AZURE_LOCATION
