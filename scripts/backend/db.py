@@ -40,6 +40,7 @@ class DatabaseManager:
                 translated_text TEXT,
                 timestamp TEXT,
                 lang_code TEXT,
+                audio_base64 TEXT,
                 FOREIGN KEY(room_id) REFERENCES rooms(id)
             )
         ''')
@@ -71,6 +72,12 @@ class DatabaseManager:
             self.cursor.execute("ALTER TABLE dubbing_history ADD COLUMN session_id TEXT")
         except sqlite3.OperationalError:
             pass # Column likely already exists
+
+        # Migration: Ensure audio_base64 column exists in messages
+        try:
+            self.cursor.execute("ALTER TABLE messages ADD COLUMN audio_base64 TEXT")
+        except sqlite3.OperationalError:
+            pass
         
         # Video Outputs Table for storing processed videos
         self.cursor.execute('''
@@ -93,22 +100,22 @@ class DatabaseManager:
             
         self.conn.commit()
 
-    def add_message(self, room_id, user, original, translated, lang_code):
+    def add_message(self, room_id, user, original, translated, lang_code, audio_base64=None):
         timestamp = time.strftime("%H:%M:%S")
         with self._lock:
             # Ensure room exists
             self.cursor.execute("INSERT OR IGNORE INTO rooms (id, created_at) VALUES (?, ?)", (room_id, timestamp))
             
             self.cursor.execute('''
-                INSERT INTO messages (room_id, user, original_text, translated_text, timestamp, lang_code)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (room_id, user, original, translated, timestamp, lang_code))
+                INSERT INTO messages (room_id, user, original_text, translated_text, timestamp, lang_code, audio_base64)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (room_id, user, original, translated, timestamp, lang_code, audio_base64))
             self.conn.commit()
 
     def get_messages(self, room_id, limit=50):
         with self._lock:
             self.cursor.execute('''
-                SELECT user, original_text, translated_text, timestamp, lang_code 
+                SELECT user, original_text, translated_text, timestamp, lang_code, audio_base64
                 FROM messages 
                 WHERE room_id = ? 
                 ORDER BY id DESC 
