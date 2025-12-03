@@ -167,7 +167,20 @@ def run_pipeline(
     progress_bar=None,
     status_container=None
 ):
-    translation_config, synthesis_config = get_azure_configs(source_lang_code, voice_name)
+    speech_key, service_region = get_azure_configs()
+    
+    translation_config = speechsdk.translation.SpeechTranslationConfig(
+        subscription=speech_key, 
+        region=service_region
+    )
+    translation_config.speech_recognition_language = source_lang_code
+    translation_config.add_target_language(target_lang_code)
+
+    synthesis_config = speechsdk.SpeechConfig(
+        subscription=speech_key, 
+        region=service_region
+    )
+    synthesis_config.speech_synthesis_voice_name = voice_name
     temp_audio_path = None
     all_segments = []
     resources = []
