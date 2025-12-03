@@ -75,22 +75,22 @@ def render_batch_studio(
 
                                     ydl_opts = {
                                         'outtmpl': os.path.join(temp_dir, f'downloaded_video_{unique_id}.%(ext)s'),
-                                        # Use best format that contains both video and audio if possible, else best video + best audio
-                                        'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-                                        'merge_output_format': 'mp4',
+                                        'format': 'best[ext=mp4]/best', # Prioritize single file to reduce merge errors
                                         'noplaylist': True,
-                                        'quiet': True,
+                                        'quiet': False, # Enable output for debugging logs
                                         'nocheckcertificate': True,
-                                        'ignoreerrors': True,
-                                        'no_warnings': True,
-                                        'force_ipv4': True, # Force IPv4 to avoid some blocks
+                                        'no_warnings': False,
+                                        'force_ipv4': True,
+                                        'socket_timeout': 30,
+                                        'source_address': '0.0.0.0', # Bind to IPv4
                                         'http_headers': {
                                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                                            'Accept-Language': 'en-us,en;q=0.5',
                                         }
                                     }
                                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                         ydl.download([search_query])
-                                    
                                     # Find the downloaded file
                                     found_path = None
                                     for ext in ['.mp4', '.mkv', '.webm']:
@@ -100,11 +100,21 @@ def render_batch_studio(
                                             break
                                     
                                     if found_path:
-                                        st.session_state['downloaded_video_path'] = found_path
-                                        st.success("Video fetched successfully.")
-                                        st.rerun()
+                                        # Check if file is empty
+                                        if os.path.getsize(found_path) > 0:
+                                            st.session_state['downloaded_video_path'] = found_path
+                                            st.success(f"Video downloaded successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error("The downloaded file is empty. YouTube might be blocking the server IP.")
+                                            st.warning("👉 Please try using the 'Upload File' option instead.")
+                                            try:
+                                                os.remove(found_path)
+                                            except:
+                                                pass
                                     else:
                                         st.error("Download failed or file not found.")
+                                        st.warning("👉 Please try using the 'Upload File' option instead.")
                                 except Exception as e:
                                     st.error(f"Error while downloading: {e}")
                     else:
@@ -178,8 +188,7 @@ def render_batch_studio(
 
                                                         ydl_opts = {
                                                             'outtmpl': os.path.join(temp_dir, f'downloaded_video_{unique_id}.%(ext)s'),
-                                                            'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-                                                            'merge_output_format': 'mp4',
+                                                            'format': 'best[ext=mp4]/best',
                                                             'noplaylist': True,
                                                             'quiet': True,
                                                             'nocheckcertificate': True,
@@ -314,10 +323,10 @@ def render_batch_studio(
                                     cap.release()
                                 except:
                                     pass
-                            
+
                             # Save to DB
                             db.add_video_output(
-                                session_id=st.session_state.get('session_id'),
+                                session_id=session_id,
                                 title=title,
                                 description=description,
                                 video_path=latest_item.get('video_path'),
