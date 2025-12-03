@@ -48,7 +48,7 @@ LANG_CODE_NAME_MAP = {code: name for name, code in TRANSLATE_OPTIONS.items()}
 # Azure credentials (kept here so other modules can import)
 # NOTE: This follows the original file's inline key. Consider replacing with secure config.
 AZURE_KEY = os.getenv("AZURE_SPEECH_KEY")
-AZURE_LOCATION = os.getenv("AZURE_SPEECH_REGION")
+AZURE_LOCATION = "centralindia"
 
 @st.cache_resource
 def get_azure_configs(source_lang_code, target_voice_name):

@@ -1,0 +1,13 @@
+streamlit
+azure-cognitiveservices-speech
+streamlit-webrtc
+av
+numpy
+pandas
+moviepy
+noisereduce
+soundfile
+opencv-python-headless
+requests
+python-dotenv
+yt-dlp
