@@ -167,6 +167,7 @@ def run_pipeline(
     progress_bar=None,
     status_container=None
 ):
+    # Fetch Azure credentials
     speech_key, service_region = get_azure_configs()
     
     translation_config = speechsdk.translation.SpeechTranslationConfig(
