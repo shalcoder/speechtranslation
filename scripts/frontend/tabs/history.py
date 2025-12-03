@@ -56,7 +56,7 @@ def render_history(target_lang_name, source_lang_name, mode):
                                     f,
                                     file_name=f"{video['title']}.mp4",
                                     key=f"vid_{idx}",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
                         
                         if video['audio_path'] and os.path.exists(video['audio_path']):
@@ -66,7 +66,7 @@ def render_history(target_lang_name, source_lang_name, mode):
                                     f,
                                     file_name=f"{video['title']}.wav",
                                     key=f"aud_{idx}",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
                     
                     with col_media:
@@ -106,14 +106,14 @@ def render_history(target_lang_name, source_lang_name, mode):
                         
                         if item.get('video_path') and os.path.exists(item['video_path']):
                             with open(item['video_path'], "rb") as f:
-                                st.download_button(f"Download Video 🎬", f, file_name=f"video_{task_num}.mp4", key=f"v_{idx}_hist", type="secondary", use_container_width=True)
+                                st.download_button(f"Download Video 🎬", f, file_name=f"video_{task_num}.mp4", key=f"v_{idx}_hist", type="secondary", width='stretch')
                         
                         if item.get('audio_path') and os.path.exists(item['audio_path']):
                             with open(item['audio_path'], "rb") as f:
-                                st.download_button(f"Download Audio 🎧", f, file_name=f"audio_{task_num}.wav", key=f"a_{idx}_hist", type="secondary", use_container_width=True)
+                                st.download_button(f"Download Audio 🎧", f, file_name=f"audio_{task_num}.wav", key=f"a_{idx}_hist", type="secondary", width='stretch')
 
                         if item.get('srt'):
-                            st.download_button(f"Download Subtitles 📄", item['srt'], file_name=f"subs_{task_num}.srt", key=f"s_{idx}_hist", type="secondary", use_container_width=True)
+                            st.download_button(f"Download Subtitles 📄", item['srt'], file_name=f"subs_{task_num}.srt", key=f"s_{idx}_hist", type="secondary", width='stretch')
 
                         if item.get('segments'):
                             # Prepare CSV data
@@ -138,7 +138,7 @@ def render_history(target_lang_name, source_lang_name, mode):
                                     mime="text/csv",
                                     key=f"csv_{idx}_hist",
                                     type="secondary",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
 
                     with col_prev:

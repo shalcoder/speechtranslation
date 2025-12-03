@@ -68,18 +68,18 @@ def render_live_stream(
         
         # Logic for Start/Stop
         if live_mode == "File Simulation":
-            start_btn = c_start.button("Start Simulation ⚡", type="primary", use_container_width=True)
-            stop_btn = c_stop.button("Stop Session 🛑", use_container_width=True)
+            start_btn = c_start.button("Start Simulation ⚡", type="primary", width='stretch')
+            stop_btn = c_stop.button("Stop Session 🛑", width='stretch')
         else:
             # For Microphone, we use WebRTC streamer which acts as the "Start" mechanism
             # But we still need to initialize the orchestrator
             if 'orchestrator' not in st.session_state or not st.session_state.orchestrator.is_running:
-                start_btn = c_start.button("Initialize Engine ⚡", type="primary", use_container_width=True)
+                start_btn = c_start.button("Initialize Engine ⚡", type="primary", width='stretch')
             else:
                 start_btn = False
                 c_start.success("Engine Ready")
             
-            stop_btn = c_stop.button("Stop Engine 🛑", use_container_width=True)
+            stop_btn = c_stop.button("Stop Engine 🛑", width='stretch')
 
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("#### Session Profile")

@@ -241,8 +241,9 @@ class LiveTranslationOrchestrator:
                 self.push_stream = speechsdk.audio.PushAudioInputStream()
                 audio_config = speechsdk.audio.AudioConfig(stream=self.push_stream)
             else:
-                # Default Microphone (Local only)
-                audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
+                # Default Microphone (Local only) - DISABLED for Cloud Stability
+                # audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
+                raise ValueError(f"Invalid input_type '{input_type}'. Cloud deployment does not support default microphone. Use 'WebRTC' or 'File Simulation'.")
 
             self.recognizer = speechsdk.translation.TranslationRecognizer(
                 translation_config=translation_config,

@@ -143,7 +143,7 @@ def render_batch_studio(
                                     with c1:
                                         thumb = entry.get('thumbnail')
                                         if thumb:
-                                            st.image(thumb, use_container_width=True)
+                                            st.image(thumb, width='stretch')
                                         else:
                                             st.markdown("📷 *No Image*")
                                     with c2:
@@ -256,7 +256,7 @@ def render_batch_studio(
     
     col_btn, _ = st.columns([1, 4])
     with col_btn:
-        if st.button(f"Start Dubbing to {target_lang_name}", type="primary", disabled=is_disabled, use_container_width=True):
+        if st.button(f"Start Dubbing to {target_lang_name}", type="primary", disabled=is_disabled, width='stretch'):
             final_input = video_path if video_path else audio_only_path
             is_vid = (video_path is not None)
             
@@ -489,10 +489,10 @@ def render_batch_studio(
             c1, c2 = st.columns(2)
             with c1:
                 with open(active_item['video_path'], "rb") as f:
-                    st.download_button("⬇️ Download Video", f, file_name="dubbed_video.mp4", mime="video/mp4", use_container_width=True)
+                    st.download_button("⬇️ Download Video", f, file_name="dubbed_video.mp4", mime="video/mp4", width='stretch')
             with c2:
                 if active_item.get('srt'):
-                    st.download_button("📄 Download Subtitles", active_item['srt'], file_name="subtitles.srt", mime="text/srt", use_container_width=True)
+                    st.download_button("📄 Download Subtitles", active_item['srt'], file_name="subtitles.srt", mime="text/srt", width='stretch')
 
         elif active_item.get('audio_path'):
             st.audio(active_item['audio_path'])

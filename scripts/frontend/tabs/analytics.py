@@ -45,7 +45,7 @@ def render_analytics():
         with tab_latency:
             if orch.latencies:
                 latency_data = pd.DataFrame({"Segment": range(len(orch.latencies)), "Latency (ms)": orch.latencies})
-                st.line_chart(latency_data, x="Segment", y="Latency (ms)", color="#FF4B4B", use_container_width=True)
+                st.line_chart(latency_data, x="Segment", y="Latency (ms)", color="#FF4B4B", width='stretch')
                 st.caption("Processing time per speech segment.")
         
         with tab_quality:
@@ -55,5 +55,5 @@ def render_analytics():
                 
             if chart_data:
                 df_quality = pd.DataFrame(chart_data)
-                st.line_chart(df_quality, color=["#4B4BFF"], use_container_width=True)
+                st.line_chart(df_quality, color=["#4B4BFF"], width='stretch')
                 st.caption("Translation quality metrics over time.")

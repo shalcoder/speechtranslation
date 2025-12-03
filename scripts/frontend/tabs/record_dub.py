@@ -50,7 +50,7 @@ def render_record_dub(
         if rec_path:
             st.markdown("#### Original Audio Playback")
             st.audio(rec_path)
-            if st.button(f"Translate & Dub Recording to {target_lang_name}", type="primary", use_container_width=True):
+            if st.button(f"Translate & Dub Recording to {target_lang_name}", type="primary", width='stretch'):
                 with st.spinner("Processing short audio segment..."):
                     is_vid = False
                     run_pipeline(rec_path, is_vid, source_lang_code, target_lang_code, tts_voice_map.get(target_lang_code), chunk_duration_sec, base_voice_rate, base_voice_pitch, "Recorded Audio", target_lang_name, "Instant Dub")
@@ -62,6 +62,6 @@ def render_record_dub(
             latest = st.session_state['history'][-1]
             if not latest.get('video_path'): 
                 st.audio(latest['audio_path'])
-                st.download_button("Download Dubbed Audio 🎧", open(latest['audio_path'], "rb"), file_name="instant_dubbed_audio.wav", type="secondary", use_container_width=True)
+                st.download_button("Download Dubbed Audio 🎧", open(latest['audio_path'], "rb"), file_name="instant_dubbed_audio.wav", type="secondary", width='stretch')
         else:
             st.info("The translated audio will appear here.")

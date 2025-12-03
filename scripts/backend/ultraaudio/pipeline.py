@@ -341,8 +341,9 @@ def run_pipeline(
                             syn = None
                             try:
                                 # Create a fresh synthesizer for each segment to avoid state issues
-                                # Using audio_config=None to get in-memory result
-                                syn = speechsdk.SpeechSynthesizer(speech_config=synthesis_config, audio_config=None)
+                                # Use os.devnull to prevent trying to open default speaker on server
+                                null_audio_config = speechsdk.audio.AudioConfig(filename=os.devnull)
+                                syn = speechsdk.SpeechSynthesizer(speech_config=synthesis_config, audio_config=null_audio_config)
                                 res = syn.speak_ssml_async(ssml).get()
                                 
                                 if res.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
