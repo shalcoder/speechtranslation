@@ -5,6 +5,9 @@ av
 numpy
 pandas
 moviepy
+imageio
+imageio-ffmpeg
+setuptools
 noisereduce
 soundfile
 opencv-python-headless
