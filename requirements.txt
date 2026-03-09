@@ -4,10 +4,10 @@ streamlit-webrtc
 av
 numpy
 pandas
-moviepy
-imageio
-imageio-ffmpeg
-setuptools
+moviepy==1.0.3
+imageio==2.9.0
+imageio-ffmpeg==0.4.8
+setuptools<74
 noisereduce
 soundfile
 opencv-python-headless
