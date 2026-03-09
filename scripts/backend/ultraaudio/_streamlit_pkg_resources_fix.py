@@ -22,11 +22,12 @@ def ensure_pkg_resources() -> None:
     except ModuleNotFoundError:
         pass
 
-    # Best-effort: install/upgrade setuptools into the current environment.
+    # Best-effort: install a setuptools version that still ships pkg_resources.
+    # setuptools>=74 removed pkg_resources, so we pin below that threshold.
     # If this fails, we re-raise the original error.
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "setuptools"],
+            [sys.executable, "-m", "pip", "install", "setuptools<74"],
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
